@@ -27,10 +27,40 @@ async function run() {
     await client.connect();
 
     const menuCollection = client.db("TastyTraverse").collection("Menu");
+    const reviewCollection = client.db("TastyTraverse").collection("reviews");
+    const CartCollection = client.db("TastyTraverse").collection("carts");
     // menu data load on server
-    app.get('/user',async(req,res)=>{
+    app.get('/menu',async(req,res)=>{
         const result =await menuCollection.find().toArray();
         res.send(result)
+    })
+
+    // reviews data load on server
+    app.get('/reviews',async(req,res)=>{
+        const result =await reviewCollection.find().toArray();
+        res.send(result)
+    })
+
+    // cart collection
+
+    app.get('/carts',async(req,res)=>{
+      const email =req.query.email
+      console.log(email)
+      if(!email){
+        res.send([])
+      }
+      const query = { email: email };
+      const result =await CartCollection.find(query).toArray();
+      res.send(result)
+
+
+    })
+
+    app.post('/carts',async(req,res)=>{
+      const item = req.body
+      console.log(item)
+      const result = await CartCollection.insertOne(item);
+      res.send(result)
     })
 
     // Send a ping to confirm a successful connection
