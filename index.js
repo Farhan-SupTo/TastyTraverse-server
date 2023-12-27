@@ -128,6 +128,22 @@ async function run() {
         const result =await menuCollection.find().toArray();
         res.send(result)
     })
+    // delete item from manage user using delete operation
+
+    app.delete('/menu/:id',jwtVerify,verifyAdmin,async(req,res)=>{
+      const id=req.params.id 
+      const query ={ _id: new ObjectId(id)}
+      const result =await menuCollection.deleteOne(query)
+      res.send(result)
+    })
+
+    // add cart data to backend
+
+    app.post('/menu',jwtVerify,verifyAdmin,async(req,res)=>{
+      const newItem =req.body
+      const result =await menuCollection.insertOne(newItem)
+      res.send(result)
+    })
 
     // reviews related
     app.get('/reviews',async(req,res)=>{
