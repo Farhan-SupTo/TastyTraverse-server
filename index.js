@@ -3,6 +3,8 @@ const app=express()
 require('dotenv').config()
 const cors = require('cors');
 const jwt = require("jsonwebtoken");
+const stripe = require("stripe")(process.env.PAYMENT_SECRET_KEY)
+
 const port =process.env.PORT || 5000
 
 // middleware
@@ -48,6 +50,7 @@ async function run() {
     const reviewCollection = client.db("TastyTraverse").collection("reviews");
     const CartCollection = client.db("TastyTraverse").collection("carts");
     const usersCollection = client.db("TastyTraverse").collection("users");
+    const paymentCollection = client.db("TastyTraverse").collection("payments");
 
 
     // TOKEN SETUP
@@ -184,6 +187,105 @@ async function run() {
       const result = await CartCollection.deleteOne(query);
       res.send(result)
     })
+
+    // CREATE PAYMENTS INTENT
+
+    app.post("/create-payment-intent",jwtVerify, async (req, res) =>{
+      const {price} =req.body
+      
+      const amount =price*100
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: [
+          "card"
+        ],
+      })
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+
+    })
+
+    // payment section
+
+    app.post('/payments',jwtVerify,async(req,res)=>{
+      const payment =req.body 
+      const insertResult =await paymentCollection.insertOne(payment) 
+      
+      const query ={_id: { $in: payment.cartItems.map(id=> new ObjectId(id))}}
+      const deletedResult =await CartCollection.deleteMany(query)
+    
+      
+      res.send({deletedResult,insertResult})
+    })
+
+    // admin dashboard chart show
+
+    app.get('/admin-stats',jwtVerify,verifyAdmin, async(req,res)=>{
+      const users =await usersCollection.estimatedDocumentCount()
+      const products =await menuCollection.estimatedDocumentCount()
+      const Orders =await paymentCollection.estimatedDocumentCount()
+
+
+       const payments =await paymentCollection.find().toArray()
+       const Revenue =payments.reduce((sum,payment)=> sum + payment.price,0)
+
+      res.send({
+        users,
+        products,
+        Orders,
+        Revenue
+      })
+    })
+
+
+    // show graph data using pipelining
+
+  //   * 1. load all payments
+  //   * 2. for each payment, get the menuItems array
+  //   * 3. for each item in the menuItems array get the menuItem from the menu collection
+  //   * 4. put them in an array: allOrderedItems
+  //   * 5. separate allOrderedItems by category using filter
+  //   * 6. now get the quantity by using length: pizzas.length
+  //   * 7. for each category use reduce to get the total amount spent on this category
+  //   * 
+  //  */
+   app.get('/order-stats',jwtVerify,verifyAdmin,async(req, res) =>{
+     const pipeline = [
+       {
+         $lookup: {
+           from: 'Menu',
+           localField: 'menuItems',
+           foreignField: '_id',
+           as: 'menuItemsData'
+         }
+       },
+       {
+         $unwind: '$menuItemsData'
+       },
+       {
+         $group: {
+           _id: '$menuItemsData.category',
+           count: { $sum: 1 },
+           total: { $sum: '$menuItemsData.price' }
+         }
+       },
+       {
+         $project: {
+           category: '$_id',
+           count: 1,
+           total: { $round: ['$total', 2] },
+           _id: 0
+         }
+       }
+     ];
+
+     const result = await paymentCollection.aggregate(pipeline).toArray()
+     res.send(result)
+
+   })
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
